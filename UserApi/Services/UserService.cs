@@ -21,8 +21,14 @@ public class UserService
         });
     }
 
+
     public List<User> GetAll() => _users;
     public User? GetByLogin(string login) => _users.FirstOrDefault(u => u.Login == login);
     public void Add(User user) => _users.Add(user);
-    // И остальные методы добавим позже
+    public void Remove(User user)
+    {
+        _users.Remove(user);
+    }
+
+
 }

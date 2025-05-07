@@ -266,7 +266,78 @@ public class UsersController : ControllerBase
 
         return Ok(users);
     }
+    [HttpDelete("delete/{login}")]
+    public IActionResult DeleteUser(string login, [FromBody] UserDeleteRequest request)
+    {
+        // Авторизация
+        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
+            !Request.Headers.TryGetValue("Password", out var passwordHeader))
+        {
+            return Unauthorized("Не переданы заголовки авторизации");
+        }
 
+        var sender = _userService.GetByLogin(loginHeader!);
+        if (sender == null || sender.Password != passwordHeader || !sender.Admin)
+            return StatusCode(403, "Удаление доступно только администраторам");
+
+        var target = _userService.GetByLogin(login);
+        if (target == null)
+            return NotFound("Пользователь не найден");
+
+        // Защита от удаления самого себя
+        if (target.Login == sender.Login)
+            return StatusCode(403, "Нельзя удалить самого себя");
+
+        if (request.SoftDelete)
+        {
+            if (target.RevokedOn != null)
+                return Conflict("Пользователь уже удалён");
+
+            target.RevokedOn = DateTime.UtcNow;
+            target.RevokedBy = sender.Login;
+            target.ModifiedOn = DateTime.UtcNow;
+            target.ModifiedBy = sender.Login;
+
+            return Ok("Пользователь мягко удалён");
+        }
+        else
+        {
+            _userService.Remove(target);
+            return Ok("Пользователь полностью удалён");
+        }
+    }
+
+
+
+    [HttpPut("restore/{login}")]
+    public IActionResult RestoreUser(string login)
+    {
+        // Авторизация
+        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
+            !Request.Headers.TryGetValue("Password", out var passwordHeader))
+        {
+            return Unauthorized("Не переданы заголовки авторизации");
+        }
+
+        var admin = _userService.GetByLogin(loginHeader!);
+        if (admin == null || admin.Password != passwordHeader || !admin.Admin)
+            return StatusCode(403, "Восстановление доступно только администраторам");
+
+
+        var user = _userService.GetByLogin(login);
+        if (user == null)
+            return NotFound("Пользователь не найден");
+
+        if (user.RevokedOn == null)
+            return Conflict("Пользователь уже активен");
+
+        user.RevokedOn = null;
+        user.RevokedBy = null;
+        user.ModifiedOn = DateTime.UtcNow;
+        user.ModifiedBy = admin.Login;
+
+        return Ok("Пользователь восстановлен");
+    }
 
 
 }
