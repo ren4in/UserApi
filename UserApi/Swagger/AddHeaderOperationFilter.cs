@@ -15,7 +15,7 @@ public class AddHeaderOperationFilter : IOperationFilter
             In = ParameterLocation.Header,
             Required = false,
             Schema = new OpenApiSchema { Type = "string" },
-            Description = "Логин администратора"
+            Description = "Логин"
         });
 
         operation.Parameters.Add(new OpenApiParameter
@@ -24,7 +24,7 @@ public class AddHeaderOperationFilter : IOperationFilter
             In = ParameterLocation.Header,
             Required = false,
             Schema = new OpenApiSchema { Type = "string" },
-            Description = "Пароль администратора"
+            Description = "Пароль"
         });
     }
 }

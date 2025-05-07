@@ -143,5 +143,130 @@ public class UsersController : ControllerBase
         return Ok("Логин успешно изменён");
     }
 
+    [HttpGet("read/active")]
+    public IActionResult GetActiveUsers()
+    {
+        // Авторизация
+        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
+            !Request.Headers.TryGetValue("Password", out var passwordHeader))
+        {
+            return Unauthorized("Не переданы заголовки авторизации");
+        }
+
+        var sender = _userService.GetByLogin(loginHeader!);
+        if (sender == null || sender.Password != passwordHeader || !sender.Admin)
+            return StatusCode(403, "Доступ разрешён только администраторам");
+
+        // Фильтрация и сортировка
+        var users = _userService.GetAll()
+            .Where(u => u.RevokedOn == null)
+            .OrderBy(u => u.CreatedOn)
+            .ToList();
+
+        // Можно вернуть только нужные поля (если не хочешь показывать всё)
+        var result = users.Select(u => new
+        {
+            u.Login,
+            u.Name,
+            u.Gender,
+            u.Birthday,
+            u.CreatedOn
+        });
+
+        return Ok(result);
+    }
+
+
+    [HttpGet("read/by-login/{login}")]
+    public IActionResult GetUserByLogin(string login)
+    {
+        // Авторизация
+        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
+            !Request.Headers.TryGetValue("Password", out var passwordHeader))
+        {
+            return Unauthorized("Не переданы заголовки авторизации");
+        }
+
+        var sender = _userService.GetByLogin(loginHeader!);
+        if (sender == null || sender.Password != passwordHeader || !sender.Admin)
+            return StatusCode(403, "Доступ разрешён только администраторам");
+
+        var user = _userService.GetByLogin(login);
+        if (user == null)
+            return NotFound("Пользователь не найден");
+
+        return Ok(new
+        {
+            user.Name,
+            user.Gender,
+            user.Birthday,
+            IsActive = user.RevokedOn == null
+        });
+    }
+    [HttpGet("read/self")]
+    public IActionResult GetSelf()
+    {
+        // Авторизация через заголовки
+        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
+            !Request.Headers.TryGetValue("Password", out var passwordHeader))
+        {
+            return Unauthorized("Не переданы заголовки авторизации");
+        }
+
+        var user = _userService.GetByLogin(loginHeader!);
+        if (user == null || user.Password != passwordHeader)
+            return StatusCode(403, "Неверные учетные данные");
+
+        if (user.RevokedOn != null)
+            return StatusCode(403, "Пользователь удалён");
+
+        return Ok(new
+        {
+            user.Name,
+            user.Gender,
+            user.Birthday,
+            IsActive = true
+        });
+    }
+
+
+    [HttpGet("read/older-than/{age}")]
+    public IActionResult GetUsersOlderThan(int age)
+    {
+        // Авторизация
+        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
+            !Request.Headers.TryGetValue("Password", out var passwordHeader))
+        {
+            return Unauthorized("Не переданы заголовки авторизации");
+        }
+
+        var sender = _userService.GetByLogin(loginHeader!);
+        if (sender == null || sender.Password != passwordHeader || !sender.Admin)
+            return StatusCode(403, "Доступ разрешён только администраторам");
+
+        var today = DateTime.UtcNow.Date;
+
+        var users = _userService.GetAll()
+            .Where(u => u.Birthday != null)
+            .Where(u => u.RevokedOn == null)
+            .Where(u =>
+            {
+                var birthDate = u.Birthday!.Value;
+                var calculatedAge = today.Year - birthDate.Year;
+                if (birthDate > today.AddYears(-calculatedAge)) calculatedAge--;
+                return calculatedAge > age;
+            })
+            .Select(u => new
+            {
+                u.Login,
+                u.Name,
+                u.Birthday
+            })
+            .ToList();
+
+        return Ok(users);
+    }
+
+
 
 }
