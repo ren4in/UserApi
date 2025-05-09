@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using UserApi.Models;
 using UserApi.Services;
 
@@ -6,6 +8,7 @@ namespace UserApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class UsersController : ControllerBase
 {
     private readonly UserService _userService;
@@ -15,25 +18,23 @@ public class UsersController : ControllerBase
         _userService = userService;
     }
 
-    /// <summary>
-    /// Создание нового пользователя (только для админа)
-    /// </summary>
+    private User? GetCurrentUser() => _userService.GetByLogin(User.Identity?.Name!);
+    private bool IsAdmin() => User.IsInRole("Admin");
+
     [HttpPost("create")]
+    [Authorize(Roles = "Admin")]
     public IActionResult Create([FromBody] UserCreateRequest request)
     {
-        // Авторизация через логин/пароль админа в заголовках запроса (упрощённо)
-        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
-            !Request.Headers.TryGetValue("Password", out var passwordHeader))
-        {
-            return Unauthorized("Не переданы заголовки авторизации");
-        }
+        if (request == null)
+            return BadRequest("Запрос не содержит данных. Проверьте тело запроса.");
 
-        var admin = _userService.GetByLogin(loginHeader!);
-        if (admin == null || admin.Password != passwordHeader || !admin.Admin)
-            return StatusCode(403, "Недостаточно прав");
+        var existing = _userService.GetByLogin(request.Login);
+        if (existing != null)
+            return Conflict($"Пользователь с логином '{request.Login}' уже существует.");
 
-        if (_userService.GetByLogin(request.Login) != null)
-            return Conflict("Пользователь с таким логином уже существует");
+        var admin = GetCurrentUser();
+        if (admin == null)
+            return Unauthorized("Токен недействителен или не найден. Повторите авторизацию.");
 
         var user = new User
         {
@@ -48,207 +49,171 @@ public class UsersController : ControllerBase
 
         _userService.Add(user);
 
-        return Ok(user);
+        return Ok(new
+        {
+            message = "Пользователь успешно создан.",
+            createdUser = new
+            {
+                user.Login,
+                user.Name,
+                user.Gender,
+                user.Birthday,
+                user.Admin
+            }
+        });
     }
     [HttpPut("update-1/info")]
     public IActionResult UpdateInfo([FromBody] UserUpdateInfoRequest request)
     {
-        // Авторизация
-        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
-            !Request.Headers.TryGetValue("Password", out var passwordHeader))
-        {
-            return Unauthorized("Не переданы заголовки авторизации");
-        }
-
-        var sender = _userService.GetByLogin(loginHeader!);
-        if (sender == null || sender.Password != passwordHeader)
-            return StatusCode(403, "Неверные учетные данные");
+        var sender = GetCurrentUser();
+        if (sender == null)
+            return Unauthorized("Вы не авторизованы или токен недействителен.");
 
         var target = _userService.GetByLogin(request.TargetLogin);
         if (target == null)
-            return NotFound("Пользователь не найден");
+            return NotFound($"Пользователь с логином '{request.TargetLogin}' не найден.");
 
-        // Проверка прав
         var isSelf = sender.Login == target.Login;
-        if (!sender.Admin && (!isSelf || target.RevokedOn != null))
-            return StatusCode(403, "Нет прав на изменение");
 
-        // Обновление данных
+        if (!sender.Admin && (!isSelf || target.RevokedOn != null))
+        {
+            if (target.RevokedOn != null)
+                return Forbid("Невозможно изменить данные удалённого пользователя.");
+            else
+                return Forbid("Вы можете изменять только свои данные.");
+        }
+
         target.Name = request.Name;
         target.Gender = request.Gender;
         target.Birthday = request.Birthday;
         target.ModifiedOn = DateTime.UtcNow;
         target.ModifiedBy = sender.Login;
 
-        return Ok(target);
+        return Ok(new
+        {
+            message = "Информация успешно обновлена.",
+            updated = new
+            {
+                target.Login,
+                target.Name,
+                target.Gender,
+                target.Birthday
+            }
+        });
     }
 
     [HttpPut("update-1/password")]
     public IActionResult ChangePassword([FromBody] UserChangePasswordRequest request)
     {
-        // Авторизация
-        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
-            !Request.Headers.TryGetValue("Password", out var passwordHeader))
-        {
-            return Unauthorized("Не переданы заголовки авторизации");
-        }
-
-        var sender = _userService.GetByLogin(loginHeader!);
-        if (sender == null || sender.Password != passwordHeader)
-            return StatusCode(403, "Неверные учетные данные");
+        var sender = GetCurrentUser();
+        if (sender == null)
+            return Unauthorized("Вы не вошли в систему или токен недействителен.");
 
         var target = _userService.GetByLogin(request.TargetLogin);
         if (target == null)
-            return NotFound("Пользователь не найден");
+            return NotFound($"Пользователь с логином '{request.TargetLogin}' не найден.");
 
         var isSelf = sender.Login == target.Login;
         if (!sender.Admin && (!isSelf || target.RevokedOn != null))
-            return StatusCode(403, "Нет прав на смену пароля");
+        {
+            if (target.RevokedOn != null)
+                return Forbid("Невозможно изменить пароль удалённого пользователя.");
+            else
+                return Forbid("У вас нет прав на изменение пароля другого пользователя.");
+        }
 
         target.Password = request.NewPassword;
         target.ModifiedOn = DateTime.UtcNow;
         target.ModifiedBy = sender.Login;
 
-        return Ok("Пароль успешно изменён");
+        return Ok("Пароль успешно изменён.");
     }
+
     [HttpPut("update-1/login")]
     public IActionResult ChangeLogin([FromBody] UserChangeLoginRequest request)
     {
-        // Авторизация
-        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
-            !Request.Headers.TryGetValue("Password", out var passwordHeader))
-        {
-            return Unauthorized("Не переданы заголовки авторизации");
-        }
+        if (request == null)
+            return BadRequest("Запрос не содержит данных. Проверьте тело запроса.");
 
-        var sender = _userService.GetByLogin(loginHeader!);
-        if (sender == null || sender.Password != passwordHeader)
-            return StatusCode(403, "Неверные учетные данные");
+        if (string.IsNullOrWhiteSpace(request.NewLogin))
+            return BadRequest("Новый логин не может быть пустым.");
+
+        var sender = GetCurrentUser();
+        if (sender == null)
+            return Unauthorized("Вы не авторизованы или токен недействителен.");
 
         var target = _userService.GetByLogin(request.TargetLogin);
         if (target == null)
-            return NotFound("Пользователь не найден");
+            return NotFound($"Пользователь с логином '{request.TargetLogin}' не найден.");
 
         if (_userService.GetByLogin(request.NewLogin) != null)
-            return Conflict("Новый логин уже занят");
+            return Conflict($"Логин '{request.NewLogin}' уже занят другим пользователем.");
 
         var isSelf = sender.Login == target.Login;
         if (!sender.Admin && (!isSelf || target.RevokedOn != null))
-            return StatusCode(403, "Нет прав на смену логина");
+        {
+            if (target.RevokedOn != null)
+                return Forbid("Нельзя изменить логин удалённого пользователя.");
+            else
+                return Forbid("Вы можете изменять логин только для себя.");
+        }
 
         target.Login = request.NewLogin;
         target.ModifiedOn = DateTime.UtcNow;
         target.ModifiedBy = sender.Login;
 
-        return Ok("Логин успешно изменён");
+        return Ok(new
+        {
+            message = "Логин успешно изменён.",
+            updatedUser = new
+            {
+                oldLogin = request.TargetLogin,
+                newLogin = request.NewLogin
+            }
+        });
     }
 
+
     [HttpGet("read/active")]
+    [Authorize(Roles = "Admin")]
     public IActionResult GetActiveUsers()
     {
-        // Авторизация
-        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
-            !Request.Headers.TryGetValue("Password", out var passwordHeader))
-        {
-            return Unauthorized("Не переданы заголовки авторизации");
-        }
-
-        var sender = _userService.GetByLogin(loginHeader!);
-        if (sender == null || sender.Password != passwordHeader || !sender.Admin)
-            return StatusCode(403, "Доступ разрешён только администраторам");
-
-        // Фильтрация и сортировка
         var users = _userService.GetAll()
             .Where(u => u.RevokedOn == null)
             .OrderBy(u => u.CreatedOn)
+            .Select(u => new
+            {
+                u.Login,
+                u.Name,
+                u.Gender,
+                u.Birthday,
+                u.CreatedOn
+            })
             .ToList();
 
-        // Можно вернуть только нужные поля (если не хочешь показывать всё)
-        var result = users.Select(u => new
-        {
-            u.Login,
-            u.Name,
-            u.Gender,
-            u.Birthday,
-            u.CreatedOn
-        });
-
-        return Ok(result);
-    }
-
-
-    [HttpGet("read/by-login/{login}")]
-    public IActionResult GetUserByLogin(string login)
-    {
-        // Авторизация
-        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
-            !Request.Headers.TryGetValue("Password", out var passwordHeader))
-        {
-            return Unauthorized("Не переданы заголовки авторизации");
-        }
-
-        var sender = _userService.GetByLogin(loginHeader!);
-        if (sender == null || sender.Password != passwordHeader || !sender.Admin)
-            return StatusCode(403, "Доступ разрешён только администраторам");
-
-        var user = _userService.GetByLogin(login);
-        if (user == null)
-            return NotFound("Пользователь не найден");
+        if (users.Count == 0)
+            return Ok(new { message = "Нет активных пользователей." });
 
         return Ok(new
         {
-            user.Name,
-            user.Gender,
-            user.Birthday,
-            IsActive = user.RevokedOn == null
+            message = $"Найдено активных пользователей: {users.Count}",
+            users
         });
     }
-    [HttpGet("read/self")]
-    public IActionResult GetSelf()
-    {
-        // Авторизация через заголовки
-        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
-            !Request.Headers.TryGetValue("Password", out var passwordHeader))
-        {
-            return Unauthorized("Не переданы заголовки авторизации");
-        }
 
-        var user = _userService.GetByLogin(loginHeader!);
-        if (user == null || user.Password != passwordHeader)
-            return StatusCode(403, "Неверные учетные данные");
-
-        if (user.RevokedOn != null)
-            return StatusCode(403, "Пользователь удалён");
-
-        return Ok(new
-        {
-            user.Name,
-            user.Gender,
-            user.Birthday,
-            IsActive = true
-        });
-    }
 
 
     [HttpGet("read/older-than/{age}")]
+    [Authorize(Roles = "Admin")]
     public IActionResult GetUsersOlderThan(int age)
     {
-        // Авторизация
-        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
-            !Request.Headers.TryGetValue("Password", out var passwordHeader))
-        {
-            return Unauthorized("Не переданы заголовки авторизации");
-        }
-
-        var sender = _userService.GetByLogin(loginHeader!);
-        if (sender == null || sender.Password != passwordHeader || !sender.Admin)
-            return StatusCode(403, "Доступ разрешён только администраторам");
+        if (age < 0 || age > 150)
+            return BadRequest("Возраст должен быть в пределах от 0 до 150.");
 
         var today = DateTime.UtcNow.Date;
 
         var users = _userService.GetAll()
-            .Where(u => u.Birthday != null)
-            .Where(u => u.RevokedOn == null)
+            .Where(u => u.Birthday != null && u.RevokedOn == null)
             .Where(u =>
             {
                 var birthDate = u.Birthday!.Value;
@@ -264,80 +229,76 @@ public class UsersController : ControllerBase
             })
             .ToList();
 
-        return Ok(users);
+        if (users.Count == 0)
+            return Ok(new { message = $"Нет пользователей старше {age} лет." });
+
+        return Ok(new
+        {
+            message = $"Найдено пользователей старше {age} лет: {users.Count}",
+            users
+        });
     }
+
     [HttpDelete("delete/{login}")]
+    [Authorize(Roles = "Admin")]
     public IActionResult DeleteUser(string login, [FromBody] UserDeleteRequest request)
     {
-        // Авторизация
-        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
-            !Request.Headers.TryGetValue("Password", out var passwordHeader))
-        {
-            return Unauthorized("Не переданы заголовки авторизации");
-        }
+        var sender = GetCurrentUser();
+        if (sender == null)
+            return Unauthorized("Вы не авторизованы.");
 
-        var sender = _userService.GetByLogin(loginHeader!);
-        if (sender == null || sender.Password != passwordHeader || !sender.Admin)
-            return StatusCode(403, "Удаление доступно только администраторам");
+        if (string.IsNullOrWhiteSpace(login))
+            return BadRequest("Логин пользователя не указан.");
 
         var target = _userService.GetByLogin(login);
         if (target == null)
-            return NotFound("Пользователь не найден");
+            return NotFound($"Пользователь с логином '{login}' не найден.");
 
-        // Защита от удаления самого себя
         if (target.Login == sender.Login)
-            return StatusCode(403, "Нельзя удалить самого себя");
+            return Forbid("Вы не можете удалить самого себя.");
 
         if (request.SoftDelete)
         {
             if (target.RevokedOn != null)
-                return Conflict("Пользователь уже удалён");
+                return Conflict($"Пользователь '{login}' уже был удалён ранее.");
 
             target.RevokedOn = DateTime.UtcNow;
             target.RevokedBy = sender.Login;
             target.ModifiedOn = DateTime.UtcNow;
             target.ModifiedBy = sender.Login;
 
-            return Ok("Пользователь мягко удалён");
+            return Ok(new { message = $"Пользователь '{login}' мягко удалён." });
         }
         else
         {
             _userService.Remove(target);
-            return Ok("Пользователь полностью удалён");
+            return Ok(new { message = $"Пользователь '{login}' полностью удалён." });
         }
     }
 
-
-
     [HttpPut("restore/{login}")]
+    [Authorize(Roles = "Admin")]
     public IActionResult RestoreUser(string login)
     {
-        // Авторизация
-        if (!Request.Headers.TryGetValue("Login", out var loginHeader) ||
-            !Request.Headers.TryGetValue("Password", out var passwordHeader))
-        {
-            return Unauthorized("Не переданы заголовки авторизации");
-        }
+        var admin = GetCurrentUser();
+        if (admin == null)
+            return Unauthorized("Вы не авторизованы.");
 
-        var admin = _userService.GetByLogin(loginHeader!);
-        if (admin == null || admin.Password != passwordHeader || !admin.Admin)
-            return StatusCode(403, "Восстановление доступно только администраторам");
-
+        if (string.IsNullOrWhiteSpace(login))
+            return BadRequest("Логин пользователя не указан.");
 
         var user = _userService.GetByLogin(login);
         if (user == null)
-            return NotFound("Пользователь не найден");
+            return NotFound($"Пользователь с логином '{login}' не найден.");
 
         if (user.RevokedOn == null)
-            return Conflict("Пользователь уже активен");
+            return Conflict($"Пользователь '{login}' уже активен.");
 
         user.RevokedOn = null;
         user.RevokedBy = null;
         user.ModifiedOn = DateTime.UtcNow;
         user.ModifiedBy = admin.Login;
 
-        return Ok("Пользователь восстановлен");
+        return Ok(new { message = $"Пользователь '{login}' успешно восстановлен." });
     }
-
-
 }
