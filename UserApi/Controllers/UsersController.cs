@@ -201,6 +201,45 @@ public class UsersController : ControllerBase
         });
     }
 
+    [HttpGet("read/by-login/{login}")]
+    [Authorize(Roles = "Admin")]
+    public IActionResult GetUserByLogin(string login)
+    {
+        if (string.IsNullOrWhiteSpace(login))
+            return BadRequest("Логин не указан.");
+
+        var user = _userService.GetByLogin(login);
+        if (user == null)
+            return NotFound($"Пользователь с логином '{login}' не найден.");
+
+        return Ok(new
+        {
+            user.Name,
+            user.Gender,
+            user.Birthday,
+            IsActive = user.RevokedOn == null
+        });
+    }
+
+    [HttpGet("read/self")]
+    public IActionResult GetSelf()
+    {
+        var user = GetCurrentUser();
+        if (user == null)
+            return Unauthorized("Вы не авторизованы или токен недействителен.");
+
+        if (user.RevokedOn != null)
+            return Forbid("Вы были удалены и не можете получить доступ к данным.");
+
+        return Ok(new
+        {
+            user.Login,
+            user.Name,
+            user.Gender,
+            user.Birthday,
+            IsActive = true
+        });
+    }
 
 
     [HttpGet("read/older-than/{age}")]
