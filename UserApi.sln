@@ -7,6 +7,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "UserApi", "UserApi\UserApi.
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Элементы решения", "Элементы решения", "{94CF9925-1460-4B85-93CE-68026800201D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UserApi.Tests", "UserApi.Tests\UserApi.Tests.csproj", "{10229BBF-9E51-4743-B361-1F9F490F4601}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -17,6 +19,10 @@ Global
 		{D908B9CE-D15F-4DA3-8FA6-CBB0BCDF3ED0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D908B9CE-D15F-4DA3-8FA6-CBB0BCDF3ED0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D908B9CE-D15F-4DA3-8FA6-CBB0BCDF3ED0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{10229BBF-9E51-4743-B361-1F9F490F4601}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{10229BBF-9E51-4743-B361-1F9F490F4601}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{10229BBF-9E51-4743-B361-1F9F490F4601}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{10229BBF-9E51-4743-B361-1F9F490F4601}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,11 +1,15 @@
 ﻿using UserApi.Models;
+using UserApi.Services.UserApi.Services;
 
 namespace UserApi.Services;
 
-public class UserService
+public class UserService : IUserService
 {
     private readonly List<User> _users = new();
-
+    public IEnumerable<User> GetAll()
+    {
+        return _users;
+    }
     public UserService()
     {
         // Создание пользователя Admin
@@ -22,8 +26,7 @@ public class UserService
     }
 
 
-    public List<User> GetAll() => _users;
-    public User? GetByLogin(string login) => _users.FirstOrDefault(u => u.Login == login);
+     public User? GetByLogin(string login) => _users.FirstOrDefault(u => u.Login == login);
     public void Add(User user) => _users.Add(user);
     public void Remove(User user)
     {

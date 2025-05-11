@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using UserApi.Models;
 using UserApi.Services;
+using UserApi.Services.UserApi.Services;
 
 namespace UserApi.Controllers;
 
@@ -11,14 +12,14 @@ namespace UserApi.Controllers;
 [Authorize]
 public class UsersController : ControllerBase
 {
-    private readonly UserService _userService;
+    private readonly IUserService _userService;
 
-    public UsersController(UserService userService)
+    public UsersController(IUserService userService)
     {
         _userService = userService;
     }
 
-    private User? GetCurrentUser() => _userService.GetByLogin(User.Identity?.Name!);
+    protected virtual User? GetCurrentUser() => _userService.GetByLogin(User.Identity?.Name!);
     private bool IsAdmin() => User.IsInRole("Admin");
 
     [HttpPost("create")]
@@ -117,9 +118,9 @@ public class UsersController : ControllerBase
         if (!sender.Admin && (!isSelf || target.RevokedOn != null))
         {
             if (target.RevokedOn != null)
-                return Forbid("Невозможно изменить пароль удалённого пользователя.");
+                 return StatusCode(403, "Невозможно изменить пароль удалённого пользователя.");
             else
-                return Forbid("У вас нет прав на изменение пароля другого пользователя.");
+                return StatusCode(403, "У вас нет прав на изменение пароля другого пользователя.");
         }
 
         target.Password = request.NewPassword;
@@ -150,12 +151,13 @@ public class UsersController : ControllerBase
             return Conflict($"Логин '{request.NewLogin}' уже занят другим пользователем.");
 
         var isSelf = sender.Login == target.Login;
+
         if (!sender.Admin && (!isSelf || target.RevokedOn != null))
         {
             if (target.RevokedOn != null)
-                return Forbid("Нельзя изменить логин удалённого пользователя.");
+                return StatusCode(403, "Нельзя изменить логин удалённого пользователя.");
             else
-                return Forbid("Вы можете изменять логин только для себя.");
+                return StatusCode(403, "Вы можете изменять логин только для себя.");
         }
 
         target.Login = request.NewLogin;
@@ -172,7 +174,6 @@ public class UsersController : ControllerBase
             }
         });
     }
-
 
     [HttpGet("read/active")]
     [Authorize(Roles = "Admin")]

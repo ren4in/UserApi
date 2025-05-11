@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Text;
 using UserApi.Models;
 using UserApi.Services;
+using UserApi.Services.UserApi.Services;
 
 namespace UserApi.Controllers;
 
@@ -13,14 +14,15 @@ namespace UserApi.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
-    private readonly UserService _userService;
+    private readonly IUserService _userService;
     private readonly IConfiguration _config;
 
-    public AuthController(UserService userService, IConfiguration config)
+    public AuthController(IUserService userService, IConfiguration config)
     {
         _userService = userService;
         _config = config;
     }
+
 
     [HttpPost("login")]
     [AllowAnonymous]

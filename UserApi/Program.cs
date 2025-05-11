@@ -2,6 +2,7 @@
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using UserApi.Services;
+using UserApi.Services.UserApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,7 +14,7 @@ var jwtKey = builder.Configuration["JwtSettings:Key"]
 var key = Encoding.ASCII.GetBytes(jwtKey);
 
 // 📦 Сервисы
-builder.Services.AddSingleton<UserService>();
+builder.Services.AddSingleton<IUserService, UserService>();
 builder.Services.AddControllers();
 
 // 🔒 JWT-аутентификация
@@ -109,3 +110,4 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+    
